@@ -48,6 +48,15 @@ updateRangeLabels();
 strengthRange.addEventListener("input", updateRangeLabels);
 speedRange.addEventListener("input", updateRangeLabels);
 
+function showOverlayLayer() {
+  overlayCanvas.style.opacity = "1";
+}
+
+function hideOverlayLayer() {
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  overlayCanvas.style.opacity = "0";
+}
+
 function setCanvasSize(width, height) {
   [
     mainCanvas,
@@ -60,6 +69,8 @@ function setCanvasSize(width, height) {
     canvas.width = width;
     canvas.height = height;
   });
+
+  overlayCanvas.style.opacity = "1";
 }
 
 function clearCanvas(ctx, canvas) {
@@ -133,6 +144,8 @@ function clearSelectionOnly() {
   clearCanvas(selectedCtx, selectedCanvas);
   clearCanvas(overlayCtx, overlayCanvas);
 
+  overlayCanvas.style.opacity = "1";
+
   hasPainted = false;
   selectionBounds = null;
   lastPoint = null;
@@ -184,10 +197,19 @@ function paintMaskLine(from, to) {
   maskCtx.restore();
 
   hasPainted = true;
-  drawOverlayPreview();
+
+  if (!isPlaying) {
+    drawOverlayPreview();
+  }
 }
 
 function drawOverlayPreview() {
+  if (isPlaying) {
+    hideOverlayLayer();
+    return;
+  }
+
+  showOverlayLayer();
   clearCanvas(overlayCtx, overlayCanvas);
 
   if (!hasPainted) return;
@@ -198,10 +220,6 @@ function drawOverlayPreview() {
   overlayCtx.fillStyle = "rgba(255, 105, 180, 0.30)";
   overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   overlayCtx.restore();
-}
-
-function hideOverlayPreview() {
-  clearCanvas(overlayCtx, overlayCanvas);
 }
 
 function rebuildMaskedLayers() {
@@ -287,7 +305,12 @@ function renderStatic() {
   }
 
   mainCtx.drawImage(imageCanvas, 0, 0);
-  drawOverlayPreview();
+
+  if (!isPlaying) {
+    drawOverlayPreview();
+  } else {
+    hideOverlayLayer();
+  }
 }
 
 function drawAnimatedSelection(time) {
@@ -358,8 +381,7 @@ function renderAnimatedFrame(time) {
   mainCtx.drawImage(baseCanvas, 0, 0);
   drawAnimatedSelection(time);
 
-  // 再生中は赤い選択表示を消す
-  hideOverlayPreview();
+  hideOverlayLayer();
 
   if (isPlaying) {
     animationId = requestAnimationFrame(renderAnimatedFrame);
@@ -375,6 +397,7 @@ function stopAnimation() {
     animationId = null;
   }
 
+  overlayCanvas.style.opacity = "1";
   renderStatic();
 }
 
@@ -389,7 +412,7 @@ function startAnimation() {
     return;
   }
 
-  finalizeSelection();
+  rebuildMaskedLayers();
 
   if (!selectionBounds) {
     alert("選択範囲がありません。もう一度なぞってください。");
@@ -401,8 +424,7 @@ function startAnimation() {
   phase = 0;
   lastTime = performance.now();
 
-  // 再生を押した瞬間に赤い選択表示を消す
-  hideOverlayPreview();
+  hideOverlayLayer();
 
   setStatus("再生中です。選んだ場所だけがやわらかく揺れます。");
   animationId = requestAnimationFrame(renderAnimatedFrame);
@@ -421,6 +443,8 @@ overlayCanvas.addEventListener("pointerdown", (event) => {
 
   event.preventDefault();
   stopAnimation();
+
+  showOverlayLayer();
 
   isPainting = true;
   overlayCanvas.setPointerCapture(event.pointerId);
