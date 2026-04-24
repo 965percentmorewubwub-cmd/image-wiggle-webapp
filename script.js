@@ -1,258 +1,381 @@
-const fileInput = document.getElementById('fileInput');
-const imageCanvas = document.getElementById('imageCanvas');
-const maskCanvas = document.getElementById('maskCanvas');
-const viewer = document.getElementById('viewer');
-const statusText = document.getElementById('statusText');
-const playPauseButton = document.getElementById('playPauseButton');
-const resetMaskButton = document.getElementById('resetMaskButton');
-const strengthRange = document.getElementById('strengthRange');
-const speedRange = document.getElementById('speedRange');
-const strengthValue = document.getElementById('strengthValue');
-const speedValue = document.getElementById('speedValue');
+const imageInput = document.getElementById("imageInput");
+const strengthRange = document.getElementById("strengthRange");
+const speedRange = document.getElementById("speedRange");
+const strengthValue = document.getElementById("strengthValue");
+const speedValue = document.getElementById("speedValue");
+const playButton = document.getElementById("playButton");
+const resetButton = document.getElementById("resetButton");
+const statusText = document.getElementById("statusText");
 
-const imageCtx = imageCanvas.getContext('2d', { alpha: false });
-const maskCtx = maskCanvas.getContext('2d');
+const mainCanvas = document.getElementById("mainCanvas");
+const overlayCanvas = document.getElementById("overlayCanvas");
+const mainCtx = mainCanvas.getContext("2d");
+const overlayCtx = overlayCanvas.getContext("2d");
 
-const baseCanvas = document.createElement('canvas');
-const baseCtx = baseCanvas.getContext('2d', { willReadFrequently: true });
-const maskDataCanvas = document.createElement('canvas');
-const maskDataCtx = maskDataCanvas.getContext('2d', { willReadFrequently: true });
+const imageCanvas = document.createElement("canvas");
+const imageCtx = imageCanvas.getContext("2d");
 
-let loadedImage = null;
-let drawing = false;
+const maskCanvas = document.createElement("canvas");
+const maskCtx = maskCanvas.getContext("2d");
+
+const baseCanvas = document.createElement("canvas");
+const baseCtx = baseCanvas.getContext("2d");
+
+const selectedCanvas = document.createElement("canvas");
+const selectedCtx = selectedCanvas.getContext("2d");
+
+let hasImage = false;
+let hasPainted = false;
+let isPainting = false;
 let isPlaying = false;
-let rafId = null;
+let selectionBounds = null;
+let lastPoint = null;
+let animationId = null;
 let phase = 0;
-let drawWidth = 0;
-let drawHeight = 0;
-let offsetX = 0;
-let offsetY = 0;
+let lastTime = 0;
 
-const MAX_EDGE = 1200;
-const BRUSH_RADIUS = 24;
-const MASK_ALPHA = 90;
-
-function setCanvasSize(canvas, width, height) {
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.floor(width * dpr));
-  canvas.height = Math.max(1, Math.floor(height * dpr));
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+function setStatus(text) {
+  statusText.textContent = text;
 }
 
-function updateSliderLabels() {
+function updateRangeLabels() {
   strengthValue.textContent = strengthRange.value;
   speedValue.textContent = speedRange.value;
 }
 
-function fitImageSize(imgWidth, imgHeight) {
-  const viewerRect = viewer.getBoundingClientRect();
-  const targetW = viewerRect.width;
-  const targetH = viewerRect.height;
+updateRangeLabels();
 
-  const scale = Math.min(targetW / imgWidth, targetH / imgHeight);
-  drawWidth = Math.round(imgWidth * scale);
-  drawHeight = Math.round(imgHeight * scale);
-  offsetX = Math.round((targetW - drawWidth) / 2);
-  offsetY = Math.round((targetH - drawHeight) / 2);
+strengthRange.addEventListener("input", updateRangeLabels);
+speedRange.addEventListener("input", updateRangeLabels);
 
-  setCanvasSize(imageCanvas, targetW, targetH);
-  setCanvasSize(maskCanvas, targetW, targetH);
-
-  baseCanvas.width = drawWidth;
-  baseCanvas.height = drawHeight;
-  maskDataCanvas.width = drawWidth;
-  maskDataCanvas.height = drawHeight;
-
-  baseCtx.clearRect(0, 0, drawWidth, drawHeight);
-  maskDataCtx.clearRect(0, 0, drawWidth, drawHeight);
-  baseCtx.drawImage(loadedImage, 0, 0, drawWidth, drawHeight);
-
-  imageCtx.fillStyle = '#d3dbe5';
-  imageCtx.fillRect(0, 0, targetW, targetH);
-  imageCtx.drawImage(baseCanvas, offsetX, offsetY);
-  redrawMaskOverlay();
+function setCanvasSize(width, height) {
+  [mainCanvas, overlayCanvas, imageCanvas, maskCanvas, baseCanvas, selectedCanvas].forEach((canvas) => {
+    canvas.width = width;
+    canvas.height = height;
+  });
 }
 
-function loadImageFromFile(file) {
+function clearCanvas(ctx, canvas) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function fitImageSize(img) {
+  const maxSide = 1200;
+  let width = img.naturalWidth;
+  let height = img.naturalHeight;
+
+  if (width > maxSide || height > maxSide) {
+    const scale = maxSide / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+
+  return { width, height };
+}
+
+function loadImage(file) {
   if (!file) return;
-  if (!/image\/(jpeg|png)/.test(file.type)) {
-    statusText.textContent = 'JPG / PNGのみ対応です。';
+
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    const img = new Image();
+
+    img.onload = () => {
+      const { width, height } = fitImageSize(img);
+      setCanvasSize(width, height);
+
+      clearCanvas(imageCtx, imageCanvas);
+      imageCtx.drawImage(img, 0, 0, width, height);
+
+      clearSelectionOnly();
+      hasImage = true;
+      renderStatic();
+      setStatus("画像を読み込みました。画像の上を指でなぞって範囲を選んでください。");
+    };
+
+    img.src = reader.result;
+  };
+
+  reader.readAsDataURL(file);
+}
+
+imageInput.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const isValid =
+    file.type === "image/jpeg" ||
+    file.type === "image/png" ||
+    file.name.toLowerCase().endsWith(".jpg") ||
+    file.name.toLowerCase().endsWith(".jpeg") ||
+    file.name.toLowerCase().endsWith(".png");
+
+  if (!isValid) {
+    alert("JPG または PNG を選んでください。");
     return;
   }
 
-  const img = new Image();
-  img.onload = () => {
-    let width = img.naturalWidth;
-    let height = img.naturalHeight;
-
-    const maxCurrentEdge = Math.max(width, height);
-    if (maxCurrentEdge > MAX_EDGE) {
-      const ratio = MAX_EDGE / maxCurrentEdge;
-      width = Math.round(width * ratio);
-      height = Math.round(height * ratio);
-
-      const shrinkCanvas = document.createElement('canvas');
-      shrinkCanvas.width = width;
-      shrinkCanvas.height = height;
-      const shrinkCtx = shrinkCanvas.getContext('2d');
-      shrinkCtx.drawImage(img, 0, 0, width, height);
-      const scaled = new Image();
-      scaled.onload = () => {
-        loadedImage = scaled;
-        finishImageLoad();
-      };
-      scaled.src = shrinkCanvas.toDataURL('image/jpeg', 0.92);
-    } else {
-      loadedImage = img;
-      finishImageLoad();
-    }
-  };
-
-  img.onerror = () => {
-    statusText.textContent = '画像の読み込みに失敗しました。';
-  };
-
-  img.src = URL.createObjectURL(file);
-}
-
-function finishImageLoad() {
   stopAnimation();
-  isPlaying = false;
-  playPauseButton.textContent = '再生';
-  fitImageSize(loadedImage.naturalWidth, loadedImage.naturalHeight);
-  statusText.textContent = '画像上を指でなぞって揺らしたい範囲を選んでください。';
+  loadImage(file);
+});
+
+function clearSelectionOnly() {
+  clearCanvas(maskCtx, maskCanvas);
+  clearCanvas(baseCtx, baseCanvas);
+  clearCanvas(selectedCtx, selectedCanvas);
+  clearCanvas(overlayCtx, overlayCanvas);
+
+  hasPainted = false;
+  selectionBounds = null;
+  lastPoint = null;
 }
 
-function redrawMaskOverlay() {
-  const w = maskCanvas.clientWidth;
-  const h = maskCanvas.clientHeight;
-  maskCtx.clearRect(0, 0, w, h);
-  if (!loadedImage) return;
-
-  maskCtx.fillStyle = 'rgba(42, 159, 255, 0.35)';
-  maskCtx.drawImage(maskDataCanvas, offsetX, offsetY);
-
-  const imageData = maskCtx.getImageData(0, 0, w, h);
-  for (let i = 0; i < imageData.data.length; i += 4) {
-    if (imageData.data[i + 3] > 0) {
-      imageData.data[i] = 42;
-      imageData.data[i + 1] = 159;
-      imageData.data[i + 2] = 255;
-      imageData.data[i + 3] = MASK_ALPHA;
-    }
-  }
-  maskCtx.putImageData(imageData, 0, 0);
+function resetAll() {
+  stopAnimation();
+  clearSelectionOnly();
+  renderStatic();
+  setStatus(hasImage ? "選択をリセットしました。もう一度なぞって範囲を選んでください。" : "まずは画像を選んでください。");
 }
 
-function clientToImagePoint(clientX, clientY) {
-  const rect = maskCanvas.getBoundingClientRect();
-  const x = clientX - rect.left - offsetX;
-  const y = clientY - rect.top - offsetY;
+resetButton.addEventListener("click", resetAll);
+
+function getPointFromEvent(event) {
+  const rect = overlayCanvas.getBoundingClientRect();
+  const scaleX = overlayCanvas.width / rect.width;
+  const scaleY = overlayCanvas.height / rect.height;
+
   return {
-    x,
-    y,
-    inside: x >= 0 && y >= 0 && x < drawWidth && y < drawHeight,
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY
   };
 }
 
-function brushAt(point) {
-  if (!point.inside || !loadedImage) return;
-  maskDataCtx.fillStyle = '#fff';
-  maskDataCtx.beginPath();
-  maskDataCtx.arc(point.x, point.y, BRUSH_RADIUS, 0, Math.PI * 2);
-  maskDataCtx.fill();
-  redrawMaskOverlay();
+function getBrushRadius() {
+  return Math.max(14, Math.round(Math.min(overlayCanvas.width, overlayCanvas.height) * 0.03));
 }
 
-function resetMask() {
-  maskDataCtx.clearRect(0, 0, drawWidth, drawHeight);
-  redrawMaskOverlay();
+function paintMaskLine(from, to) {
+  const radius = getBrushRadius();
+
+  maskCtx.save();
+  maskCtx.strokeStyle = "rgba(255,255,255,1)";
+  maskCtx.lineWidth = radius * 2;
+  maskCtx.lineCap = "round";
+  maskCtx.lineJoin = "round";
+  maskCtx.beginPath();
+  maskCtx.moveTo(from.x, from.y);
+  maskCtx.lineTo(to.x, to.y);
+  maskCtx.stroke();
+  maskCtx.restore();
+
+  hasPainted = true;
+  drawOverlayPreview();
 }
 
-function renderFrame(timestamp) {
-  if (!isPlaying || !loadedImage) return;
-  const speed = Number(speedRange.value) / 18;
-  const strength = Number(strengthRange.value);
-  phase += 0.05 * speed;
+function drawOverlayPreview() {
+  clearCanvas(overlayCtx, overlayCanvas);
 
-  const w = imageCanvas.clientWidth;
-  const h = imageCanvas.clientHeight;
-  imageCtx.fillStyle = '#d3dbe5';
-  imageCtx.fillRect(0, 0, w, h);
+  if (!hasPainted) return;
 
-  imageCtx.drawImage(baseCanvas, offsetX, offsetY);
+  overlayCtx.save();
+  overlayCtx.drawImage(maskCanvas, 0, 0);
+  overlayCtx.globalCompositeOperation = "source-in";
+  overlayCtx.fillStyle = "rgba(255, 105, 180, 0.30)";
+  overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  overlayCtx.restore();
+}
 
-  const slice = 2;
-  for (let y = 0; y < drawHeight; y += slice) {
-    let hasMask = false;
-    for (let x = 0; x < drawWidth; x += 8) {
-      const a = maskDataCtx.getImageData(x, y, 1, 1).data[3];
-      if (a > 0) {
-        hasMask = true;
-        break;
+function rebuildMaskedLayers() {
+  if (!hasImage || !hasPainted) {
+    selectionBounds = null;
+    return;
+  }
+
+  clearCanvas(baseCtx, baseCanvas);
+  baseCtx.drawImage(imageCanvas, 0, 0);
+  baseCtx.globalCompositeOperation = "destination-out";
+  baseCtx.drawImage(maskCanvas, 0, 0);
+  baseCtx.globalCompositeOperation = "source-over";
+
+  clearCanvas(selectedCtx, selectedCanvas);
+  selectedCtx.drawImage(imageCanvas, 0, 0);
+  selectedCtx.globalCompositeOperation = "destination-in";
+  selectedCtx.drawImage(maskCanvas, 0, 0);
+  selectedCtx.globalCompositeOperation = "source-over";
+
+  selectionBounds = getSelectionBounds();
+}
+
+function getSelectionBounds() {
+  const { width, height } = maskCanvas;
+  const data = maskCtx.getImageData(0, 0, width, height).data;
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * 4 + 3];
+      if (alpha > 10) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
       }
     }
-
-    if (!hasMask) continue;
-
-    const horizontalShift = Math.sin(phase + y * 0.06) * strength;
-    imageCtx.drawImage(
-      baseCanvas,
-      0,
-      y,
-      drawWidth,
-      slice,
-      offsetX + horizontalShift,
-      offsetY + y,
-      drawWidth,
-      slice
-    );
   }
 
-  redrawMaskOverlay();
-  rafId = requestAnimationFrame(renderFrame);
+  if (maxX === -1 || maxY === -1) {
+    return null;
+  }
+
+  const padding = Math.max(6, Math.round(Math.min(width, height) * 0.01));
+
+  return {
+    left: Math.max(0, minX - padding),
+    top: Math.max(0, minY - padding),
+    right: Math.min(width, maxX + padding),
+    bottom: Math.min(height, maxY + padding),
+    width: Math.min(width, maxX + padding) - Math.max(0, minX - padding),
+    height: Math.min(height, maxY + padding) - Math.max(0, minY - padding)
+  };
 }
 
-function startAnimation() {
-  if (!loadedImage || isPlaying) return;
-  isPlaying = true;
-  playPauseButton.textContent = '停止';
-  rafId = requestAnimationFrame(renderFrame);
+function finalizeSelection() {
+  rebuildMaskedLayers();
+  renderStatic();
+
+  if (selectionBounds) {
+    setStatus("範囲を選択しました。再生を押すと、選んだ場所だけがやわらかく揺れます。");
+  } else {
+    setStatus("選択範囲が見つかりませんでした。もう一度なぞってください。");
+  }
+}
+
+function renderStatic() {
+  clearCanvas(mainCtx, mainCanvas);
+
+  if (!hasImage) {
+    return;
+  }
+
+  mainCtx.drawImage(imageCanvas, 0, 0);
+  drawOverlayPreview();
+}
+
+function drawAnimatedSelection(time) {
+  if (!selectionBounds) return;
+
+  const b = selectionBounds;
+  const strength = Number(strengthRange.value);
+  const speed = Number(speedRange.value);
+
+  const dt = Math.min((time - lastTime) / 1000, 0.04) || 0.016;
+  lastTime = time;
+
+  phase += dt * (1.2 + speed * 0.35);
+
+  const baseSize = Math.min(b.width, b.height);
+  const amplitude = Math.max(4, baseSize * 0.018 * (0.8 + strength * 0.11));
+
+  const primaryBounce = Math.sin(phase) * amplitude;
+  const secondaryBounce = Math.sin(phase * 2 - 0.9) * amplitude * 0.42;
+  const sidewaysSway = Math.sin(phase - 0.35) * amplitude * 0.30;
+  const squashWave = Math.sin(phase - 0.55) * (0.025 + strength * 0.0025);
+
+  const stripHeight = 3;
+
+  for (let y = b.top; y < b.bottom; y += stripHeight) {
+    const srcY = y;
+    const srcH = Math.min(stripHeight + 1, b.bottom - y);
+
+    const progress = (y - b.top) / Math.max(1, b.height);
+    const centerWeight = Math.sin(progress * Math.PI);
+    const lowerWeight = 0.25 + progress * 0.75;
+
+    const xOffset =
+      sidewaysSway * centerWeight +
+      Math.sin(phase * 2.15 + progress * 5.8) * amplitude * 0.06 * centerWeight;
+
+    const yOffset =
+      primaryBounce * lowerWeight * 0.30 +
+      secondaryBounce * centerWeight * 0.45;
+
+    const widthScale =
+      1 +
+      squashWave * (0.35 + centerWeight * 0.65) -
+      (primaryBounce / Math.max(60, baseSize * 2.2)) * 0.10;
+
+    const extraWidth = b.width * (widthScale - 1);
+
+    mainCtx.drawImage(
+      selectedCanvas,
+      b.left,
+      srcY,
+      b.width,
+      srcH,
+      b.left - extraWidth / 2 + xOffset,
+      srcY + yOffset,
+      b.width + extraWidth,
+      srcH + 0.8
+    );
+  }
+}
+
+function renderAnimatedFrame(time) {
+  clearCanvas(mainCtx, mainCanvas);
+
+  mainCtx.drawImage(baseCanvas, 0, 0);
+  drawAnimatedSelection(time);
+  drawOverlayPreview();
+
+  if (isPlaying) {
+    animationId = requestAnimationFrame(renderAnimatedFrame);
+  }
 }
 
 function stopAnimation() {
   isPlaying = false;
-  playPauseButton.textContent = '再生';
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
+  playButton.textContent = "再生";
+
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
   }
 
-  if (loadedImage) {
-    imageCtx.fillStyle = '#d3dbe5';
-    imageCtx.fillRect(0, 0, imageCanvas.clientWidth, imageCanvas.clientHeight);
-    imageCtx.drawImage(baseCanvas, offsetX, offsetY);
-    redrawMaskOverlay();
-  }
+  renderStatic();
 }
 
-fileInput.addEventListener('change', (event) => {
-  const file = event.target.files?.[0];
-  loadImageFromFile(file);
-});
-
-strengthRange.addEventListener('input', updateSliderLabels);
-speedRange.addEventListener('input', updateSliderLabels);
-updateSliderLabels();
-
-playPauseButton.addEventListener('click', () => {
-  if (!loadedImage) {
-    statusText.textContent = '先に画像をアップロードしてください。';
+function startAnimation() {
+  if (!hasImage) {
+    alert("先に画像を選んでください。");
     return;
   }
+
+  if (!hasPainted) {
+    alert("先に画像の上をなぞって範囲を選んでください。");
+    return;
+  }
+
+  finalizeSelection();
+
+  if (!selectionBounds) {
+    alert("選択範囲がありません。もう一度なぞってください。");
+    return;
+  }
+
+  isPlaying = true;
+  playButton.textContent = "停止";
+  phase = 0;
+  lastTime = performance.now();
+  setStatus("再生中です。選んだ場所だけがやわらかく揺れます。");
+  animationId = requestAnimationFrame(renderAnimatedFrame);
+}
+
+playButton.addEventListener("click", () => {
   if (isPlaying) {
     stopAnimation();
   } else {
@@ -260,35 +383,54 @@ playPauseButton.addEventListener('click', () => {
   }
 });
 
-resetMaskButton.addEventListener('click', () => {
-  if (!loadedImage) return;
-  resetMask();
+overlayCanvas.addEventListener("pointerdown", (event) => {
+  if (!hasImage) return;
+
+  event.preventDefault();
+  stopAnimation();
+
+  isPainting = true;
+  overlayCanvas.setPointerCapture(event.pointerId);
+
+  const point = getPointFromEvent(event);
+  lastPoint = point;
+  paintMaskLine(point, point);
 });
 
-maskCanvas.addEventListener('pointerdown', (event) => {
-  if (!loadedImage) return;
-  drawing = true;
-  maskCanvas.setPointerCapture(event.pointerId);
-  brushAt(clientToImagePoint(event.clientX, event.clientY));
+overlayCanvas.addEventListener("pointermove", (event) => {
+  if (!isPainting || !hasImage) return;
+
+  event.preventDefault();
+
+  const point = getPointFromEvent(event);
+  paintMaskLine(lastPoint, point);
+  lastPoint = point;
 });
 
-maskCanvas.addEventListener('pointermove', (event) => {
-  if (!drawing || !loadedImage) return;
-  brushAt(clientToImagePoint(event.clientX, event.clientY));
-});
+function finishPainting(event) {
+  if (!isPainting) return;
 
-function endDraw(event) {
-  drawing = false;
-  if (event?.pointerId !== undefined && maskCanvas.hasPointerCapture(event.pointerId)) {
-    maskCanvas.releasePointerCapture(event.pointerId);
+  if (event) {
+    event.preventDefault();
   }
+
+  isPainting = false;
+  lastPoint = null;
+  finalizeSelection();
 }
 
-maskCanvas.addEventListener('pointerup', endDraw);
-maskCanvas.addEventListener('pointercancel', endDraw);
-
-window.addEventListener('resize', () => {
-  if (loadedImage) {
-    fitImageSize(loadedImage.naturalWidth, loadedImage.naturalHeight);
-  }
+overlayCanvas.addEventListener("pointerup", finishPainting);
+overlayCanvas.addEventListener("pointercancel", finishPainting);
+overlayCanvas.addEventListener("pointerleave", (event) => {
+  if (isPainting) finishPainting(event);
 });
+
+overlayCanvas.addEventListener(
+  "touchmove",
+  (event) => {
+    if (isPainting) {
+      event.preventDefault();
+    }
+  },
+  { passive: false }
+);
