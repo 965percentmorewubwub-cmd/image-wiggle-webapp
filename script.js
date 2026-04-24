@@ -49,7 +49,14 @@ strengthRange.addEventListener("input", updateRangeLabels);
 speedRange.addEventListener("input", updateRangeLabels);
 
 function setCanvasSize(width, height) {
-  [mainCanvas, overlayCanvas, imageCanvas, maskCanvas, baseCanvas, selectedCanvas].forEach((canvas) => {
+  [
+    mainCanvas,
+    overlayCanvas,
+    imageCanvas,
+    maskCanvas,
+    baseCanvas,
+    selectedCanvas
+  ].forEach((canvas) => {
     canvas.width = width;
     canvas.height = height;
   });
@@ -135,7 +142,11 @@ function resetAll() {
   stopAnimation();
   clearSelectionOnly();
   renderStatic();
-  setStatus(hasImage ? "選択をリセットしました。もう一度なぞって範囲を選んでください。" : "まずは画像を選んでください。");
+  setStatus(
+    hasImage
+      ? "選択をリセットしました。もう一度なぞって範囲を選んでください。"
+      : "まずは画像を選んでください。"
+  );
 }
 
 resetButton.addEventListener("click", resetAll);
@@ -152,7 +163,10 @@ function getPointFromEvent(event) {
 }
 
 function getBrushRadius() {
-  return Math.max(14, Math.round(Math.min(overlayCanvas.width, overlayCanvas.height) * 0.03));
+  return Math.max(
+    14,
+    Math.round(Math.min(overlayCanvas.width, overlayCanvas.height) * 0.03)
+  );
 }
 
 function paintMaskLine(from, to) {
@@ -184,6 +198,10 @@ function drawOverlayPreview() {
   overlayCtx.fillStyle = "rgba(255, 105, 180, 0.30)";
   overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   overlayCtx.restore();
+}
+
+function hideOverlayPreview() {
+  clearCanvas(overlayCtx, overlayCanvas);
 }
 
 function rebuildMaskedLayers() {
@@ -219,6 +237,7 @@ function getSelectionBounds() {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const alpha = data[(y * width + x) * 4 + 3];
+
       if (alpha > 10) {
         if (x < minX) minX = x;
         if (y < minY) minY = y;
@@ -234,13 +253,18 @@ function getSelectionBounds() {
 
   const padding = Math.max(6, Math.round(Math.min(width, height) * 0.01));
 
+  const left = Math.max(0, minX - padding);
+  const top = Math.max(0, minY - padding);
+  const right = Math.min(width, maxX + padding);
+  const bottom = Math.min(height, maxY + padding);
+
   return {
-    left: Math.max(0, minX - padding),
-    top: Math.max(0, minY - padding),
-    right: Math.min(width, maxX + padding),
-    bottom: Math.min(height, maxY + padding),
-    width: Math.min(width, maxX + padding) - Math.max(0, minX - padding),
-    height: Math.min(height, maxY + padding) - Math.max(0, minY - padding)
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top
   };
 }
 
@@ -298,7 +322,10 @@ function drawAnimatedSelection(time) {
 
     const xOffset =
       sidewaysSway * centerWeight +
-      Math.sin(phase * 2.15 + progress * 5.8) * amplitude * 0.06 * centerWeight;
+      Math.sin(phase * 2.15 + progress * 5.8) *
+        amplitude *
+        0.06 *
+        centerWeight;
 
     const yOffset =
       primaryBounce * lowerWeight * 0.30 +
@@ -330,7 +357,9 @@ function renderAnimatedFrame(time) {
 
   mainCtx.drawImage(baseCanvas, 0, 0);
   drawAnimatedSelection(time);
-  drawOverlayPreview();
+
+  // 再生中は赤い選択表示を消す
+  hideOverlayPreview();
 
   if (isPlaying) {
     animationId = requestAnimationFrame(renderAnimatedFrame);
@@ -371,6 +400,10 @@ function startAnimation() {
   playButton.textContent = "停止";
   phase = 0;
   lastTime = performance.now();
+
+  // 再生を押した瞬間に赤い選択表示を消す
+  hideOverlayPreview();
+
   setStatus("再生中です。選んだ場所だけがやわらかく揺れます。");
   animationId = requestAnimationFrame(renderAnimatedFrame);
 }
@@ -421,6 +454,7 @@ function finishPainting(event) {
 
 overlayCanvas.addEventListener("pointerup", finishPainting);
 overlayCanvas.addEventListener("pointercancel", finishPainting);
+
 overlayCanvas.addEventListener("pointerleave", (event) => {
   if (isPainting) finishPainting(event);
 });
