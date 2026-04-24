@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Image Wiggle Prototype</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Image Wiggle 試作</h1>
+
+      <section class="card controls">
+        <label class="file-label" for="fileInput">画像を選ぶ（JPG / PNG）</label>
+        <input id="fileInput" type="file" accept="image/jpeg,image/png" />
+
+        <div class="row">
+          <label for="strengthRange">揺れの強さ</label>
+          <input id="strengthRange" type="range" min="0" max="40" value="14" />
+          <span id="strengthValue">14</span>
+        </div>
+
+        <div class="row">
+          <label for="speedRange">揺れの速さ</label>
+          <input id="speedRange" type="range" min="1" max="40" value="12" />
+          <span id="speedValue">12</span>
+        </div>
+
+        <div class="button-row">
+          <button id="playPauseButton" type="button">再生</button>
+          <button id="resetMaskButton" type="button" class="secondary">選択をリセット</button>
+        </div>
+      </section>
+
+      <section class="card viewer-wrap">
+        <p id="statusText">画像を選ぶとここに表示されます。画像の上を指でなぞると範囲を選択できます。</p>
+        <div id="viewer" class="viewer" aria-label="画像編集エリア">
+          <canvas id="imageCanvas"></canvas>
+          <canvas id="maskCanvas"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
