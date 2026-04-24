@@ -1,46 +1,63 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Image Wiggle Prototype</title>
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <main class="app">
-      <h1>Image Wiggle 試作</h1>
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+  <title>Image Wiggle 試作</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <h1>Image Wiggle 試作</h1>
 
-      <section class="card controls">
-        <label class="file-label" for="fileInput">画像を選ぶ（JPG / PNG）</label>
-        <input id="fileInput" type="file" accept="image/jpeg,image/png" />
+    <section class="panel">
+      <label class="file-label">
+        <span>画像を選ぶ（JPG / PNG）</span>
+        <input id="imageInput" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" />
+      </label>
 
-        <div class="row">
-          <label for="strengthRange">揺れの強さ</label>
-          <input id="strengthRange" type="range" min="0" max="40" value="14" />
-          <span id="strengthValue">14</span>
+      <div class="control-group">
+        <label for="strengthRange">揺れの強さ</label>
+        <div class="range-row">
+          <input id="strengthRange" type="range" min="1" max="20" value="12" />
+          <span id="strengthValue">12</span>
         </div>
+      </div>
 
-        <div class="row">
-          <label for="speedRange">揺れの速さ</label>
-          <input id="speedRange" type="range" min="1" max="40" value="12" />
-          <span id="speedValue">12</span>
+      <div class="control-group">
+        <label for="speedRange">揺れの速さ</label>
+        <div class="range-row">
+          <input id="speedRange" type="range" min="1" max="20" value="10" />
+          <span id="speedValue">10</span>
         </div>
+      </div>
 
-        <div class="button-row">
-          <button id="playPauseButton" type="button">再生</button>
-          <button id="resetMaskButton" type="button" class="secondary">選択をリセット</button>
-        </div>
-      </section>
+      <div class="button-row">
+        <button id="playButton" type="button">再生</button>
+        <button id="resetButton" type="button" class="secondary">選択をリセット</button>
+      </div>
+    </section>
 
-      <section class="card viewer-wrap">
-        <p id="statusText">画像を選ぶとここに表示されます。画像の上を指でなぞると範囲を選択できます。</p>
-        <div id="viewer" class="viewer" aria-label="画像編集エリア">
-          <canvas id="imageCanvas"></canvas>
-          <canvas id="maskCanvas"></canvas>
-        </div>
-      </section>
-    </main>
+    <section class="panel">
+      <p class="hint">
+        画像を読み込んだあと、画像の上を指でなぞって範囲を選んでください。<br />
+        選んだ場所だけが、やわらかくぷるんと揺れます。
+      </p>
 
-    <script src="script.js"></script>
-  </body>
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="mainCanvas"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+      </div>
+
+      <p id="statusText" class="status">
+        まずは画像を選んでください。
+      </p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
 </html>
